@@ -11,13 +11,14 @@ import (
 
 // CRDTS = Conflict-Free replicated data type
 
+// This is a Gossip Protocol implementation
 func SyncData(n *maelstrom.Node, interval int) {
 	time_interval := time.Duration(interval) * time.Millisecond
 	for {
 		if len(NEIGHBORHOOD) == 0 {
 			log.Printf("no connected nodes, waiting for topology...")
 		}
-		sendSynchronization(n)
+		go sendSynchronization(n)
 		time.Sleep(time_interval)
 	}
 }
@@ -31,16 +32,19 @@ func sendSynchronization(n *maelstrom.Node) error {
 			return fmt.Errorf("error generating random msg_id for replicate event: %v", err)
 		}
 
+        // Messages that the neighbor does not know yet
+        unknownMessages := getUnknownOnly(messagesCopy, nodeID)
+
 		body := map[string]any{
 			"type":     "sync",
 			"msg_id":   msgId,
-			"messages": messagesCopy,
+			"messages": unknownMessages,
 		}
 
 		if err := n.Send(nodeID, body); err != nil {
-			log.Printf("Failed to send replication to %s: %v", nodeID, err)
+			log.Printf("Failed to send synchronization to %s: %v", nodeID, err)
 		} else {
-			log.Printf("Successfully sent replication to %s", nodeID)
+			log.Printf("Successfully sent synchronization to %s", nodeID)
 		}
 	}
 
@@ -71,7 +75,11 @@ func HandleSynchronization(n *maelstrom.Node, msg maelstrom.Message) error {
 		messages = append(messages, msgValue)
 
 	}
+	// When we receive some messages we store them
 	storeMessages(messages)
+	// and we acknowledge that the neighbor who sent those messages
+	// already know them.
+	// And we send back the messages that it does not know yet (by our internal record)
 	unknownMessages := neighborAck(messages, msg.Src)
 
 	response_body := map[string]any{
@@ -105,7 +113,11 @@ func HandleSyncOk(n *maelstrom.Node, msg maelstrom.Message) error {
 		}
 	}
 
+	// When we receive a sync response, it will have a message with content
+	// we store it
 	storeMessages(messages)
+	// And receiving those values, tells us that our neighbor (that sent the message to us)
+	// know them. So we mark in our internal structure that our neighbor knows those values
 	neighborAck(messages, msg.Src)
 
 	return nil

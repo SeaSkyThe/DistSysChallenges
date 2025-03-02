@@ -43,9 +43,16 @@ You can run it by doing:
    5. `maelstrom test -w broadcast --bin ~/go/bin/challenge3 --node-count 25 --time-limit 20 --rate 100 --latency 100`
 
 Or, if you are familiar with Makefiles you can run:
+
 1. `make a` for the part A test.
 2. `make b` for the part B test.
-3. `make c` for the part C test (PS: you have to uncomment the `replication` handler in the `main.go` file)
+3. `make c` for the part C test.
 4. `make d` for the part D test.
 5. `make e` for the part E test.
 
+## References
+
+Gossip protocol was the concept used to solve this challenge. Here are some references for it.
+
+[Geek For Geeks - Gossip Protocol in Distributed Systems](https://www.geeksforgeeks.org/gossip-protocol-in-disrtibuted-systems/)
+[Wikipedia - Gossip Protocol](https://en.wikipedia.org/wiki/Gossip_protocol)

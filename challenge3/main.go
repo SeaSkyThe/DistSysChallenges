@@ -42,7 +42,8 @@ func main() {
 		return operations.HandleSyncOk(n, msg)
 	})
 
-	go operations.SyncData(n, 200)
+    // The interval here impacts the latency directly
+	go operations.SyncData(n, 180)
 
 	if err := n.Run(); err != nil {
 		log.Fatal(err)

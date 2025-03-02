@@ -11,8 +11,9 @@ var (
 
 	messageStorage = struct {
 		sync.RWMutex
-		msgs map[int]bool
-	}{msgs: make(map[int]bool)}
+		seen map[int]bool
+		msgs []int
+	}{seen: make(map[int]bool), msgs: []int{}}
 
 	neighborhoodKnows = struct {
 		sync.RWMutex
@@ -32,7 +33,8 @@ func storeMessage(messageValue int) {
 	messageStorage.Lock()
 	defer messageStorage.Unlock()
 
-	messageStorage.msgs[messageValue] = true
+	messageStorage.seen[messageValue] = true
+	messageStorage.msgs = append(messageStorage.msgs, messageValue)
 }
 
 func storeMessages(messageValues []int) {
@@ -40,8 +42,9 @@ func storeMessages(messageValues []int) {
 	defer messageStorage.Unlock()
 
 	for _, msgValue := range messageValues {
-		if _, exists := messageStorage.msgs[msgValue]; !exists {
-			messageStorage.msgs[msgValue] = true
+		if _, exists := messageStorage.seen[msgValue]; !exists {
+			messageStorage.seen[msgValue] = true
+			messageStorage.msgs = append(messageStorage.msgs, msgValue)
 		}
 	}
 }
@@ -55,12 +58,29 @@ func readMessages() []int {
 	messageStorage.RLock()
 	defer messageStorage.RUnlock()
 
-	keys := make([]int, 0, len(messageStorage.msgs))
-	for k := range messageStorage.msgs {
-		keys = append(keys, k)
+	copiedMsgs := make([]int, len(messageStorage.msgs))
+	copy(copiedMsgs, messageStorage.msgs)
+
+	return copiedMsgs
+}
+
+func getUnknownOnly(messages []int, src string) []int {
+	neighborhoodKnows.RLock()
+	defer neighborhoodKnows.RUnlock()
+
+	if _, exists := neighborhoodKnows.neighborhood[src]; !exists {
+		return messages
 	}
 
-	return keys
+	unknownMessages := []int{}
+
+	// Add each message to the source's set
+	for _, msg := range messages {
+		if _, exists := neighborhoodKnows.neighborhood[src][msg]; !exists {
+			unknownMessages = append(unknownMessages, msg)
+		}
+	}
+	return unknownMessages
 }
 
 // Returns the one I know and the neighbor dont
