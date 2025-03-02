@@ -22,12 +22,27 @@ func main() {
 		return operations.HandleTopology(n, msg)
 	})
 
-    // FOR TEST C TO WORK, UNCOMMENT THIS BELOW
-	n.Handle("replicate", func(msg maelstrom.Message) error {
-		return operations.HandleReplicate(n, msg)
+	n.Handle("sync", func(msg maelstrom.Message) error {
+		return operations.HandleSynchronization(n, msg)
 	})
 
-	go operations.ReplicateData(n, 1000)
+	n.Handle("broadcast_ok", func(msg maelstrom.Message) error {
+		return nil
+	})
+
+	n.Handle("read_ok", func(msg maelstrom.Message) error {
+		return nil
+	})
+
+	n.Handle("topology_ok", func(msg maelstrom.Message) error {
+		return nil
+	})
+
+	n.Handle("sync_ok", func(msg maelstrom.Message) error {
+		return operations.HandleSyncOk(n, msg)
+	})
+
+	go operations.SyncData(n, 200)
 
 	if err := n.Run(); err != nil {
 		log.Fatal(err)

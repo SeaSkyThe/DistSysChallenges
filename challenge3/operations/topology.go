@@ -40,7 +40,7 @@ func HandleTopology(n *maelstrom.Node, msg maelstrom.Message) error {
 			temp[i] = id
 		}
 
-		NEIGHBOR_NODES = temp
+		NEIGHBORHOOD = temp
 	}
 
 	return n.Reply(msg, response)
