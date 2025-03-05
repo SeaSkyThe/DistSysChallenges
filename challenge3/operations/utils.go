@@ -33,8 +33,10 @@ func storeMessage(messageValue int) {
 	messageStorage.Lock()
 	defer messageStorage.Unlock()
 
-	messageStorage.seen[messageValue] = true
-	messageStorage.msgs = append(messageStorage.msgs, messageValue)
+	if _, exists := messageStorage.seen[messageValue]; !exists {
+		messageStorage.seen[messageValue] = true
+		messageStorage.msgs = append(messageStorage.msgs, messageValue)
+	}
 }
 
 func storeMessages(messageValues []int) {
@@ -83,7 +85,7 @@ func getUnknownOnly(messages []int, src string) []int {
 	return unknownMessages
 }
 
-// Returns the one I know and the neighbor dont
+// Returns the ones I know and the neighbor don't
 func neighborAck(messages []int, src string) []int {
 	neighborhoodKnows.Lock()
 	defer neighborhoodKnows.Unlock()

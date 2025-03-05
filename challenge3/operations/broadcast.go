@@ -7,7 +7,7 @@ import (
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
-func HandleBroadcast(n *maelstrom.Node, msg maelstrom.Message) error { // Unmarshall the message body as an loosely-typed map.
+func HandleBroadcast(n *maelstrom.Node, msg maelstrom.Message) error {
 	var body map[string]any
 
 	if err := json.Unmarshal(msg.Body, &body); err != nil {
