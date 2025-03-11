@@ -2,6 +2,7 @@ package operations
 
 import (
 	"encoding/json"
+	"fmt"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
@@ -23,9 +24,19 @@ func HandleListCommittedOffsets(n *maelstrom.Node, msg maelstrom.Message) error 
 		return err
 	}
 
+	offsets := make(map[string]int)
+	for _, key := range req.Keys {
+		offset, ok := GlobalState.getHighestCommitedOffset(key)
+		if !ok {
+			return fmt.Errorf("error when getting highest offset for key: %s", key)
+		}
+		offsets[key] = offset
+	}
+
 	responseBody := ListCommittedOffsetsResponse{
 		Type:    "list_committed_offsets_ok",
-		Offsets: map[string]int{},
+		Offsets: offsets,
 	}
+
 	return n.Reply(msg, responseBody)
 }

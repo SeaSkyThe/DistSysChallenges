@@ -23,11 +23,12 @@ func HandleCommitOffsets(n *maelstrom.Node, msg maelstrom.Message) error {
 	}
 
 	for key, offset := range req.Offsets {
-		state.commitOffset(key, offset)
+		GlobalState.commitOffset(key, offset)
 	}
 
 	response_body := CommitOffsetResponse{
 		Type: "commit_offsets_ok",
 	}
+
 	return n.Reply(msg, response_body)
 }

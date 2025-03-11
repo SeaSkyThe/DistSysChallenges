@@ -1,57 +1,122 @@
 package operations
 
 import (
+	"context"
 	"fmt"
-	"sync"
+	"time"
+
+	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
 
 type log struct {
-	offset   int
-	commited bool
-	value    int
+	Offset   int  `json:"offset"`
+	Commited bool `json:"commited"`
+	Value    int  `json:"value"`
 }
 
-type nodeState struct {
-	mu   sync.RWMutex
-	logs map[string][]log
+type globalState struct {
+	Node   *maelstrom.Node
+	lin_kv *maelstrom.KV
 }
 
-func NewNodeState() *nodeState {
-	return &nodeState{
-		logs: make(map[string][]log),
+func NewGlobalState() *globalState {
+	n := maelstrom.NewNode()
+	return &globalState{
+		Node:   n,
+		lin_kv: maelstrom.NewLinKV(n),
 	}
 }
 
-var state = NewNodeState()
+// GLOBAL STATE VARIABLE
+var (
+	GlobalState        = NewGlobalState()
+	CONTEXT_EXPIRES_IN = 2
+	MAX_RETRIES        = 10
+)
 
-func (n *nodeState) addLog(key string, value int) log {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	logList, exists := n.logs[key]
-	if !exists {
-		logList = make([]log, 0)
+func isKeyNotExistError(err error) bool {
+	if rpcErr, ok := err.(*maelstrom.RPCError); ok && rpcErr.Code == maelstrom.KeyDoesNotExist {
+		return true
 	}
-
-	newLog := log{
-		offset:   len(logList),
-		commited: false,
-		value:    value,
-	}
-
-	logList = append(logList, newLog)
-	n.logs[key] = logList
-
-	return newLog
+	return false
 }
 
-func (n *nodeState) getLog(key string, offset int) (log, error) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
+func (n *globalState) getAndConvertLogList(key string, ctx context.Context) ([]log, any, error) {
+	var logList []log
 
-	logList, exists := n.logs[key]
-	if !exists {
-		return log{}, fmt.Errorf("the key %s does not exist", key)
+	logListAny, err := n.lin_kv.Read(ctx, key)
+	if err != nil {
+		if isKeyNotExistError(err) {
+			return []log{}, nil, nil
+		}
+		return nil, nil, err
+
+	}
+	if logListAny != nil {
+		typedList, ok := logListAny.([]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("unexpected type for key %s: %T", key, logListAny)
+		}
+
+		// Convert from generic interface{} slice to our log slice
+		logList = make([]log, len(typedList))
+		for i, item := range typedList {
+			if m, ok := item.(map[string]any); ok {
+				// Extract values with proper type conversion
+				offset, _ := m["offset"].(float64)
+				committed, _ := m["commited"].(bool)
+				val, _ := m["value"].(float64)
+
+				logList[i] = log{
+					Offset:   int(offset),
+					Commited: committed,
+					Value:    int(val),
+				}
+			}
+		}
+
+	} else {
+		logList = []log{}
+	}
+
+	return logList, logListAny, nil
+}
+
+func (n *globalState) addLog(key string, value int) (log, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(CONTEXT_EXPIRES_IN)*time.Second)
+	defer cancel()
+
+	for retry := range MAX_RETRIES {
+		logList, oldValue, err := n.getAndConvertLogList(key, ctx)
+		if err != nil {
+			return log{}, err
+		}
+
+		newLog := log{
+			Offset:   len(logList),
+			Commited: false,
+			Value:    value,
+		}
+
+		newLogList := append(logList, newLog)
+
+		err = n.lin_kv.CompareAndSwap(ctx, key, oldValue, newLogList, true)
+		if err == nil {
+			return newLog, nil
+		}
+
+		time.Sleep(50 * time.Millisecond * time.Duration(retry+1))
+	}
+	return log{}, fmt.Errorf("failed to add log after %d attempts: conflict detected", MAX_RETRIES)
+}
+
+func (n *globalState) getLog(key string, offset int) (log, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(CONTEXT_EXPIRES_IN)*time.Second)
+	defer cancel()
+
+	logList, _, err := n.getAndConvertLogList(key, ctx)
+	if err != nil {
+		return log{}, err
 	}
 
 	if offset >= len(logList) {
@@ -61,59 +126,43 @@ func (n *nodeState) getLog(key string, offset int) (log, error) {
 	return logList[offset], nil
 }
 
-func (n *nodeState) getLogs(key string, offset int) ([]log, error) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
+func (n *globalState) commitOffset(key string, upToOffset int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(CONTEXT_EXPIRES_IN)*time.Second)
+	defer cancel()
 
-	logs, exists := n.logs[key]
-	if !exists {
-		return nil, fmt.Errorf("there is no log for the given key: %s", key)
+	logList, oldValue, err := n.getAndConvertLogList(key, ctx)
+	if err != nil {
+		return fmt.Errorf("unexpected type for key %s", key)
 	}
 
-	if offset >= len(logs) {
-		return nil, fmt.Errorf("there is no value in the log for the given offset: %d", offset)
-	}
-
-	return logs[offset:], nil
-}
-
-func (n *nodeState) commitOffset(key string, upToOffset int) error {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	logs, exists := n.logs[key]
-	if !exists {
-		return fmt.Errorf("there is no log for the given key: %s", key)
-	}
-
-	if upToOffset >= len(logs) {
+	if upToOffset >= len(logList) {
 		return fmt.Errorf("there is no value in the log for the given offset: %d", upToOffset)
 	}
 
 	for i := 0; i <= upToOffset; i++ {
-		logs[i].commited = true
+		logList[i].Commited = true
 	}
 
-	return nil
+	return n.lin_kv.CompareAndSwap(ctx, key, oldValue, logList, false)
 }
 
-func (n *nodeState) getHighestCommitedOffset(key string) (int, bool) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
+func (n *globalState) getHighestCommitedOffset(key string) (int, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(CONTEXT_EXPIRES_IN)*time.Second)
+	defer cancel()
 
-	logs, exists := n.logs[key]
-	if !exists {
+	logList, _, err := n.getAndConvertLogList(key, ctx)
+	if err != nil {
 		return 0, false
 	}
 
 	highestOffset := -1
-	left, right := 0, len(logs)-1
+	left, right := 0, len(logList)-1
 
 	for left <= right {
 		mid := (left + right) / 2
 
-		if logs[mid].commited {
-			highestOffset = logs[mid].offset
+		if logList[mid].Commited {
+			highestOffset = logList[mid].Offset
 			left = mid + 1
 		} else {
 			right = mid - 1

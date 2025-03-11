@@ -7,8 +7,8 @@ import (
 )
 
 type PollRequest struct {
-	Type    string `json:"type"`
-    Offsets map[string]int `json:"offsets"`
+	Type    string         `json:"type"`
+	Offsets map[string]int `json:"offsets"`
 }
 
 type PollResponse struct {
@@ -24,11 +24,11 @@ func HandlePoll(n *maelstrom.Node, msg maelstrom.Message) error {
 
 	responseMessages := make(map[string][][2]int)
 	for key, offset := range req.Offsets {
-		log, err := state.getLog(key, offset)
+		log, err := GlobalState.getLog(key, offset)
 		if err != nil {
 			continue
 		}
-		responseMessages[key] = append(responseMessages[key], [2]int{offset, log.value})
+		responseMessages[key] = append(responseMessages[key], [2]int{offset, log.Value})
 	}
 
 	resp := PollResponse{

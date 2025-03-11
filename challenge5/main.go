@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	n := maelstrom.NewNode()
+	n := operations.GlobalState.Node
 
 	n.Handle("send", func(msg maelstrom.Message) error {
 		return operations.HandleSend(n, msg)

@@ -24,11 +24,14 @@ func HandleSend(n *maelstrom.Node, msg maelstrom.Message) error {
 		return err
 	}
 
-	log := state.addLog(req.Key, req.Msg)
+	log, err := GlobalState.addLog(req.Key, req.Msg)
+	if err != nil {
+		return err
+	}
 
 	responseBody := SendResponse{
 		Type:   "send_ok",
-		Offset: log.offset,
+		Offset: log.Offset,
 	}
 
 	return n.Reply(msg, responseBody)
